@@ -1,0 +1,19 @@
+# Generic
+*~
+\#*\#
+.DS_Store
+.envrc
+.direnv/
+
+# Nix
+result
+
+# Rust. Note that we *want* to commit Cargo.lock.
+/target
+**/*.rs.bk
+bin/
+pkg/
+wasm-pack.log
+
+# pre-commit-hooks.nix
+.pre-commit-config.yaml
