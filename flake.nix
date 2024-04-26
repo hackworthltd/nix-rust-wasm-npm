@@ -95,6 +95,7 @@
             ];
             packages = with pkgs; [
               cargo-watch
+              nil
               nodejs_20
               wasm-pack
             ];
