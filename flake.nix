@@ -26,6 +26,9 @@
 
     rust-overlay.url = "github:oxalica/rust-overlay";
     rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
+
+    advisory-db.url = "github:rustsec/advisory-db";
+    advisory-db.flake = false;
   };
 
   outputs = inputs:
@@ -42,9 +45,8 @@
             overlays = [ inputs.rust-overlay.overlays.default ];
           };
 
-          rustWithWasmTarget =
+          rustToolchain =
             (pkgs.rust-bin.fromRustupToolchainFile (./rust-toolchain.toml)).override {
-              targets = [ "wasm32-unknown-unknown" ];
               extensions = [
                 "rust-src"
                 "rust-analyzer"
@@ -52,24 +54,68 @@
               ];
             };
 
-          craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustWithWasmTarget;
+          rustWasmToolchain = rustToolchain.override {
+            targets = [ "wasm32-unknown-unknown" ];
+          };
 
-          nrwn-crate = craneLib.buildPackage {
-            src = craneLib.cleanCargoSource (craneLib.path ./.);
-            cargoExtraArgs = "--target wasm32-unknown-unknown";
-            doCheck = false;
+          craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
+          craneLibWasm = (inputs.crane.mkLib pkgs).overrideToolchain rustWasmToolchain;
+
+          src = craneLib.cleanCargoSource (craneLib.path ./.);
+
+          commonArgs = {
+            inherit src;
+            strictDeps = true;
             buildInputs = [
             ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
               pkgs.libiconv
             ];
+            doCheck = false;
           };
+
+          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+          cargoArtifactsWasm = craneLibWasm.buildDepsOnly commonArgs;
+
+          nrwn-crate = craneLib.buildPackage (commonArgs // {
+            inherit cargoArtifacts;
+          });
+
+          nrwn-crate-wasm = craneLibWasm.buildPackage (commonArgs // {
+            inherit cargoArtifactsWasm;
+            cargoExtraArgs = "--target wasm32-unknown-unknown";
+          });
+
+          inputsFrom = [
+            config.treefmt.build.devShell
+            config.pre-commit.devShell
+          ];
+
+          devShellPackages = with pkgs; [
+            cargo-watch
+            nil
+          ];
         in
         {
           checks = {
             inherit nrwn-crate;
+            inherit nrwn-crate-wasm;
+
+            nwrn-crate-clippy = craneLib.cargoClippy (commonArgs // {
+              inherit cargoArtifacts;
+              cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+            });
+
+            nwrn-crate-audit = craneLib.cargoAudit {
+              inherit (inputs) advisory-db;
+              inherit src;
+            };
           };
 
-          packages.default = nrwn-crate;
+          packages = {
+            default = nrwn-crate;
+            inherit nrwn-crate;
+            inherit nrwn-crate-wasm;
+          };
 
           treefmt.config = {
             projectRootFile = "flake.nix";
@@ -89,16 +135,16 @@
           };
 
           devShells.default = craneLib.devShell {
-            inputsFrom = [
-              config.treefmt.build.devShell
-              config.pre-commit.devShell
-            ];
-            packages = with pkgs; [
-              cargo-watch
-              nil
+            inherit inputsFrom;
+            packages = devShellPackages;
+          };
+
+          devShells.wasm = craneLibWasm.devShell {
+            inherit inputsFrom;
+            packages = devShellPackages ++ (with pkgs; [
               nodejs_20
               wasm-pack
-            ];
+            ]);
           };
         };
     };
