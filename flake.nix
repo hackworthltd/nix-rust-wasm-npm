@@ -21,8 +21,11 @@
     treefmt-nix.url = "github:numtide/treefmt-nix";
     treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
 
-    rust-flake.url = "github:juspay/rust-flake";
-    rust-flake.inputs.nixpkgs.follows = "nixpkgs";
+    crane.url = "github:ipetkov/crane";
+    crane.inputs.nixpkgs.follows = "nixpkgs";
+
+    rust-overlay.url = "github:oxalica/rust-overlay";
+    rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = inputs:
@@ -31,57 +34,71 @@
       imports = [
         inputs.treefmt-nix.flakeModule
         inputs.pre-commit-hooks-nix.flakeModule
-        inputs.rust-flake.flakeModules.default
-        inputs.rust-flake.flakeModules.nixpkgs
       ];
-      perSystem = { config, self', pkgs, lib, system, ... }: {
-        rust-project.crane.args = {
-          buildInputs = lib.optionals pkgs.stdenv.isDarwin (
-            with pkgs.darwin.apple_sdk.frameworks; [
-              IOKit
-            ]
-          );
-        };
-
-        rust-project.toolchain = (pkgs.rust-bin.fromRustupToolchainFile (./rust-toolchain.toml)).override {
-          targets = [ "wasm32-unknown-unknown" ];
-          extensions = [
-            "rust-src"
-            "rust-analyzer"
-            "clippy"
-          ];
-        };
-
-        treefmt.config = {
-          projectRootFile = "flake.nix";
-          programs = {
-            nixpkgs-fmt.enable = true;
-            rustfmt.enable = true;
+      perSystem = { config, self', pkgs, lib, system, ... }:
+        let
+          pkgs = import inputs.nixpkgs {
+            inherit system;
+            overlays = [ inputs.rust-overlay.overlays.default ];
           };
-        };
 
-        pre-commit = {
-          check.enable = true;
-          settings = {
-            hooks = {
-              treefmt.enable = true;
+          rustWithWasmTarget =
+            (pkgs.rust-bin.fromRustupToolchainFile (./rust-toolchain.toml)).override {
+              targets = [ "wasm32-unknown-unknown" ];
+              extensions = [
+                "rust-src"
+                "rust-analyzer"
+                "clippy"
+              ];
+            };
+
+          craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustWithWasmTarget;
+
+          nrwn-crate = craneLib.buildPackage {
+            src = craneLib.cleanCargoSource (craneLib.path ./.);
+            cargoExtraArgs = "--target wasm32-unknown-unknown";
+            doCheck = false;
+            buildInputs = [
+            ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
+              pkgs.libiconv
+            ];
+          };
+        in
+        {
+          checks = {
+            inherit nrwn-crate;
+          };
+
+          packages.default = nrwn-crate;
+
+          treefmt.config = {
+            projectRootFile = "flake.nix";
+            programs = {
+              nixpkgs-fmt.enable = true;
+              rustfmt.enable = true;
             };
           };
-        };
 
-        devShells.default = pkgs.mkShell {
-          inputsFrom = [
-            self'.devShells.nix-rust-wasm-npm
-            config.treefmt.build.devShell
-            config.pre-commit.devShell
-          ];
-          packages = with pkgs; [
-            cargo-watch
-            nodejs_20
-            wasm-pack
-          ];
+          pre-commit = {
+            check.enable = true;
+            settings = {
+              hooks = {
+                treefmt.enable = true;
+              };
+            };
+          };
+
+          devShells.default = craneLib.devShell {
+            inputsFrom = [
+              config.treefmt.build.devShell
+              config.pre-commit.devShell
+            ];
+            packages = with pkgs; [
+              cargo-watch
+              nodejs_20
+              wasm-pack
+            ];
+          };
         };
-        packages.default = self'.packages.nix-rust-wasm-npm;
-      };
     };
 }
