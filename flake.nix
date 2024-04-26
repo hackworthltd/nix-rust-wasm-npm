@@ -73,16 +73,19 @@
             doCheck = false;
           };
 
+          wasmArgs = commonArgs // {
+            cargoExtraArgs = "--target wasm32-unknown-unknown";
+          };
+
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
-          cargoArtifactsWasm = craneLibWasm.buildDepsOnly commonArgs;
+          cargoArtifactsWasm = craneLibWasm.buildDepsOnly wasmArgs;
 
           nrwn-crate = craneLib.buildPackage (commonArgs // {
             inherit cargoArtifacts;
           });
 
-          nrwn-crate-wasm = craneLibWasm.buildPackage (commonArgs // {
+          nrwn-crate-wasm = craneLibWasm.buildPackage (wasmArgs // {
             inherit cargoArtifactsWasm;
-            cargoExtraArgs = "--target wasm32-unknown-unknown";
           });
 
           inputsFrom = [
