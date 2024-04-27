@@ -145,6 +145,7 @@
           devShells.wasm = craneLibWasm.devShell {
             inherit inputsFrom;
             packages = devShellPackages ++ (with pkgs; [
+              binaryen
               nodejs_20
               wasm-pack
             ]);
