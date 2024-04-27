@@ -175,6 +175,7 @@
             inherit inputsFrom;
             packages = devShellPackages ++ (with pkgs; [
               binaryen
+              geckodriver
               nodejs_20
               wasm-pack
             ]);
