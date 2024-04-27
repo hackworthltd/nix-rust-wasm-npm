@@ -58,11 +58,11 @@
             targets = [ "wasm32-unknown-unknown" ];
           };
 
-          # These are dummy versions for the whole workspace and are
-          # required by `crane`. They're not used by the individual
-          # crates within the workspace.
           pname = "nrwn-workspace";
-          version = "0.1.0";
+
+          cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+
+          inherit (cargoToml.workspace.package) version;
 
           craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
           craneLibWasm = (inputs.crane.mkLib pkgs).overrideToolchain rustWasmToolchain;
