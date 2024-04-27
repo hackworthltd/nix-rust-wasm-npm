@@ -58,35 +58,64 @@
             targets = [ "wasm32-unknown-unknown" ];
           };
 
+          # These are dummy versions for the whole workspace and are
+          # required by `crane`. They're not used by the individual
+          # crates within the workspace.
+          pname = "nrwn-workspace";
+          version = "0.1.0";
+
           craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
           craneLibWasm = (inputs.crane.mkLib pkgs).overrideToolchain rustWasmToolchain;
 
           src = craneLib.cleanCargoSource (craneLib.path ./.);
 
           commonArgs = {
-            inherit src;
+            inherit pname version src;
             strictDeps = true;
+
             buildInputs = [
             ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
               pkgs.libiconv
             ];
+          };
+
+          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
+          individualCrateArgs = commonArgs // {
+            inherit cargoArtifacts;
             doCheck = false;
           };
 
           wasmArgs = commonArgs // {
-            cargoExtraArgs = "--target wasm32-unknown-unknown";
+            CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
           };
 
-          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
           cargoArtifactsWasm = craneLibWasm.buildDepsOnly wasmArgs;
 
-          nrwn-crate = craneLib.buildPackage (commonArgs // {
-            inherit cargoArtifacts;
-          });
-
-          nrwn-crate-wasm = craneLibWasm.buildPackage (wasmArgs // {
+          individualCrateArgsWasm = wasmArgs // {
             inherit cargoArtifactsWasm;
-          });
+            doCheck = false;
+          };
+
+          fileSetForCrate = crate: lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./Cargo.toml
+              ./Cargo.lock
+              crate
+            ];
+          };
+
+          greetCrateArgs = baseArgs: pname: baseArgs // {
+            inherit pname;
+            cargoExtraArgs = "--package greet";
+            src = fileSetForCrate ./greet;
+            inherit (craneLib.crateNameFromCargoToml { cargoToml = ./greet/Cargo.toml; }) version;
+          };
+
+          greet-crate = craneLib.buildPackage (greetCrateArgs individualCrateArgs "${pname}-greet");
+
+          greet-crate-wasm = craneLibWasm.buildPackage (greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm");
 
           inputsFrom = [
             config.treefmt.build.devShell
@@ -100,24 +129,24 @@
         in
         {
           checks = {
-            inherit nrwn-crate;
-            inherit nrwn-crate-wasm;
+            inherit greet-crate;
+            inherit greet-crate-wasm;
 
-            nwrn-crate-clippy = craneLib.cargoClippy (commonArgs // {
+            nwrn-workspace-clippy = craneLib.cargoClippy (commonArgs // {
               inherit cargoArtifacts;
               cargoClippyExtraArgs = "--all-targets -- --deny warnings";
             });
 
-            nwrn-crate-audit = craneLib.cargoAudit {
+            nwrn-workspace-audit = craneLib.cargoAudit {
               inherit (inputs) advisory-db;
               inherit src;
             };
           };
 
           packages = {
-            default = nrwn-crate;
-            inherit nrwn-crate;
-            inherit nrwn-crate-wasm;
+            default = greet-crate-wasm;
+            inherit greet-crate;
+            inherit greet-crate-wasm;
           };
 
           treefmt.config = {
