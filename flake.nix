@@ -60,6 +60,8 @@
 
           pname = "nrwn-workspace";
 
+          npm-scope = "hackworthltd";
+
           cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
           cargoLock = builtins.fromTOML (builtins.readFile ./Cargo.lock);
 
@@ -131,6 +133,20 @@
 
           greet-crate-wasm = craneLibWasm.buildPackage (greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm");
 
+          greet-crate-wasm-npm = craneLibWasm.mkCargoDerivation ((greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm-npm") // {
+            doInstallCargoArtifacts = false;
+
+            buildPhaseCargoCommand = ''
+              WASM_PACK_CACHE=.wasm-pack-cache wasm-pack build --out-dir $out/pkg --scope "${npm-scope}" --mode no-install --target bundler --release greet --profile release --frozen --offline
+            '';
+
+            nativeBuildInputs = [
+              pkgs.binaryen
+              pkgs.wasm-pack
+              wasm-bindgen-cli
+            ];
+          });
+
           inputsFrom = [
             config.treefmt.build.devShell
             config.pre-commit.devShell
@@ -145,6 +161,7 @@
           checks = {
             inherit greet-crate;
             inherit greet-crate-wasm;
+            inherit greet-crate-wasm-npm;
 
             nwrn-workspace-clippy = craneLib.cargoClippy (commonArgs // {
               inherit cargoArtifacts;
@@ -158,9 +175,10 @@
           };
 
           packages = {
-            default = greet-crate-wasm;
+            default = greet-crate-wasm-npm;
             inherit greet-crate;
             inherit greet-crate-wasm;
+            inherit greet-crate-wasm-npm;
           };
 
           treefmt.config = {
