@@ -105,7 +105,7 @@
           cargoArtifactsWasm = craneLibWasm.buildDepsOnly wasmArgs;
 
           individualCrateArgsWasm = wasmArgs // {
-            inherit cargoArtifactsWasm;
+            cargoArtifacts = cargoArtifactsWasm;
             doCheck = false;
           };
 
