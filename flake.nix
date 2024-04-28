@@ -81,8 +81,10 @@
 
           src = craneLib.cleanCargoSource (craneLib.path ./.);
 
+          cargoExtraArgs = "--frozen --offline";
+
           commonArgs = {
-            inherit pname version src;
+            inherit pname version src cargoExtraArgs;
             strictDeps = true;
 
             buildInputs = [
@@ -120,7 +122,7 @@
 
           greetCrateArgs = baseArgs: pname: baseArgs // {
             inherit pname;
-            cargoExtraArgs = "--package greet";
+            cargoExtraArgs = "${cargoExtraArgs} --package greet";
             src = fileSetForCrate ./greet;
             inherit (craneLib.crateNameFromCargoToml { cargoToml = ./greet/Cargo.toml; }) version;
           };
