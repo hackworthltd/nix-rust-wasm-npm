@@ -61,6 +61,18 @@
           pname = "nrwn-workspace";
 
           cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+          cargoLock = builtins.fromTOML (builtins.readFile ./Cargo.lock);
+
+          wasm-bindgen-cli =
+            let
+              wasmBindgenCargoVersions = builtins.map ({ version, ... }: version) (builtins.filter ({ name, ... }: name == "wasm-bindgen") cargoLock.package);
+              wasmBindgenVersion = assert builtins.length wasmBindgenCargoVersions == 1; builtins.elemAt wasmBindgenCargoVersions 0;
+            in
+            pkgs.wasm-bindgen-cli.override {
+              version = wasmBindgenVersion;
+              hash = "sha256-1VwY8vQy7soKEgbki4LD+v259751kKxSxmo/gqE6yV0=";
+              cargoHash = "sha256-aACJ+lYNEU8FFBs158G1/JG8sc6Rq080PeKCMnwdpH0=";
+            };
 
           inherit (cargoToml.workspace.package) version;
 
@@ -178,6 +190,8 @@
               geckodriver
               nodejs_20
               wasm-pack
+            ] ++ [
+              wasm-bindgen-cli
             ]);
           };
         };
