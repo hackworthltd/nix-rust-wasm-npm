@@ -133,6 +133,25 @@
 
           greet-crate-wasm = craneLibWasm.buildPackage (greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm");
 
+          greet-crate-wasm-check = craneLibWasm.mkCargoDerivation ((greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm-npm") // {
+            doInstallCargoArtifacts = false;
+
+            buildPhaseCargoCommand = ''
+              WASM_PACK_CACHE=.wasm-pack-cache wasm-pack test --chrome --headless --mode no-install --release greet --profile release --frozen --offline
+            '';
+
+            nativeBuildInputs = [
+              pkgs.binaryen
+              pkgs.wasm-pack
+              wasm-bindgen-cli
+
+              # We would prefer to use `geckodriver`, but it hangs on
+              # our tests in the Nix sandbox, for some reason.
+              pkgs.chromedriver
+              pkgs.chromium
+            ];
+          });
+
           greet-crate-wasm-npm = craneLibWasm.mkCargoDerivation ((greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm-npm") // {
             doInstallCargoArtifacts = false;
 
@@ -159,9 +178,7 @@
         in
         {
           checks = {
-            inherit greet-crate;
-            inherit greet-crate-wasm;
-            inherit greet-crate-wasm-npm;
+            inherit greet-crate-wasm-check;
 
             nwrn-workspace-clippy = craneLib.cargoClippy (commonArgs // {
               inherit cargoArtifacts;
@@ -207,6 +224,9 @@
             inherit inputsFrom;
             packages = devShellPackages ++ (with pkgs; [
               binaryen
+
+              # Prefer `geckodriver` to `chromedriver` for interactive
+              # development.
               geckodriver
               nodejs_20
               wasm-pack
