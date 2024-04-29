@@ -139,22 +139,11 @@
             ];
           });
 
-          greetCrateArgs = baseArgs: pname: baseArgs // {
-            inherit pname;
-            cargoExtraArgs = "${cargoExtraArgs} --package greet";
-            src = fileSetForCrate ./greet;
-            inherit (craneLib.crateNameFromCargoToml { cargoToml = ./greet/Cargo.toml; }) version;
-          };
-
-          greet-crate = craneLib.buildPackage (greetCrateArgs individualCrateArgs "${pname}-greet");
-
-          greet-crate-wasm = craneLibWasm.buildPackage (greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm");
-
-          greet-crate-wasm-check = craneLibWasm.mkCargoDerivation ((greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm-npm") // {
+          mkWasmCheck = pkgName: crateArgs: craneLibWasm.mkCargoDerivation (crateArgs // {
             doInstallCargoArtifacts = false;
 
             buildPhaseCargoCommand = ''
-              WASM_PACK_CACHE=.wasm-pack-cache wasm-pack test --chrome --headless --mode no-install --release greet --profile release --frozen --offline
+              WASM_PACK_CACHE=.wasm-pack-cache wasm-pack test --chrome --headless --mode no-install --release ${pkgName} --profile release --frozen --offline
             '';
 
             nativeBuildInputs = [
@@ -168,6 +157,19 @@
               pkgs.chromium
             ];
           });
+
+          greetCrateArgs = baseArgs: pname: baseArgs // {
+            inherit pname;
+            cargoExtraArgs = "${cargoExtraArgs} --package greet";
+            src = fileSetForCrate ./greet;
+            inherit (craneLib.crateNameFromCargoToml { cargoToml = ./greet/Cargo.toml; }) version;
+          };
+
+          greet-crate = craneLib.buildPackage (greetCrateArgs individualCrateArgs "${pname}-greet");
+
+          greet-crate-wasm = craneLibWasm.buildPackage (greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm");
+
+          greet-crate-wasm-check = mkWasmCheck "greet" (greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm-check");
 
           greet-crate-wasm-npm = mkWasmNpmPackage "greet" (greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm-npm");
 
