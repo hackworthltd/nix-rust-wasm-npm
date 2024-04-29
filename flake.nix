@@ -26,11 +26,14 @@
 
     rust-overlay.url = "github:oxalica/rust-overlay";
     rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
+
+    advisory-db.url = "github:rustsec/advisory-db";
+    advisory-db.flake = false;
   };
 
   outputs = inputs:
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
-      systems = import inputs.systems;
+      systems = [ "x86_64-linux" "aarch64-darwin" ];
       imports = [
         inputs.treefmt-nix.flakeModule
         inputs.pre-commit-hooks-nix.flakeModule
@@ -39,12 +42,14 @@
         let
           pkgs = import inputs.nixpkgs {
             inherit system;
-            overlays = [ inputs.rust-overlay.overlays.default ];
+            overlays = [
+              inputs.hacknix.overlays.default
+              inputs.rust-overlay.overlays.default
+            ];
           };
 
-          rustWithWasmTarget =
+          rustToolchain =
             (pkgs.rust-bin.fromRustupToolchainFile (./rust-toolchain.toml)).override {
-              targets = [ "wasm32-unknown-unknown" ];
               extensions = [
                 "rust-src"
                 "rust-analyzer"
@@ -52,24 +57,149 @@
               ];
             };
 
-          craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustWithWasmTarget;
+          rustWasmToolchain = rustToolchain.override {
+            targets = [ "wasm32-unknown-unknown" ];
+          };
 
-          nrwn-crate = craneLib.buildPackage {
-            src = craneLib.cleanCargoSource (craneLib.path ./.);
-            cargoExtraArgs = "--target wasm32-unknown-unknown";
-            doCheck = false;
+          pname = "nrwn-workspace";
+
+          npm-scope = "hackworthltd";
+
+          cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+          cargoLock = builtins.fromTOML (builtins.readFile ./Cargo.lock);
+
+          wasm-bindgen-cli =
+            let
+              wasmBindgenCargoVersions = builtins.map ({ version, ... }: version) (builtins.filter ({ name, ... }: name == "wasm-bindgen") cargoLock.package);
+              wasmBindgenVersion = assert builtins.length wasmBindgenCargoVersions == 1; builtins.elemAt wasmBindgenCargoVersions 0;
+            in
+            pkgs.wasm-bindgen-cli.override {
+              version = wasmBindgenVersion;
+              hash = "sha256-1VwY8vQy7soKEgbki4LD+v259751kKxSxmo/gqE6yV0=";
+              cargoHash = "sha256-aACJ+lYNEU8FFBs158G1/JG8sc6Rq080PeKCMnwdpH0=";
+            };
+
+          inherit (cargoToml.workspace.package) version;
+
+          craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
+          craneLibWasm = (inputs.crane.mkLib pkgs).overrideToolchain rustWasmToolchain;
+
+          src = craneLib.cleanCargoSource (craneLib.path ./.);
+
+          cargoExtraArgs = "--frozen --offline";
+
+          commonArgs = {
+            inherit pname version src cargoExtraArgs;
+            strictDeps = true;
+
             buildInputs = [
             ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
               pkgs.libiconv
             ];
           };
+
+          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
+          individualCrateArgs = commonArgs // {
+            inherit cargoArtifacts;
+            doCheck = false;
+          };
+
+          wasmArgs = commonArgs // {
+            CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+          };
+
+          cargoArtifactsWasm = craneLibWasm.buildDepsOnly wasmArgs;
+
+          individualCrateArgsWasm = wasmArgs // {
+            cargoArtifacts = cargoArtifactsWasm;
+            doCheck = false;
+          };
+
+          fileSetForCrate = crate: lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./Cargo.toml
+              ./Cargo.lock
+              crate
+            ];
+          };
+
+          greetCrateArgs = baseArgs: pname: baseArgs // {
+            inherit pname;
+            cargoExtraArgs = "${cargoExtraArgs} --package greet";
+            src = fileSetForCrate ./greet;
+            inherit (craneLib.crateNameFromCargoToml { cargoToml = ./greet/Cargo.toml; }) version;
+          };
+
+          greet-crate = craneLib.buildPackage (greetCrateArgs individualCrateArgs "${pname}-greet");
+
+          greet-crate-wasm = craneLibWasm.buildPackage (greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm");
+
+          greet-crate-wasm-check = craneLibWasm.mkCargoDerivation ((greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm-npm") // {
+            doInstallCargoArtifacts = false;
+
+            buildPhaseCargoCommand = ''
+              WASM_PACK_CACHE=.wasm-pack-cache wasm-pack test --chrome --headless --mode no-install --release greet --profile release --frozen --offline
+            '';
+
+            nativeBuildInputs = [
+              pkgs.binaryen
+              pkgs.wasm-pack
+              wasm-bindgen-cli
+
+              # We would prefer to use `geckodriver`, but it hangs on
+              # our tests in the Nix sandbox, for some reason.
+              pkgs.chromedriver
+              pkgs.chromium
+            ];
+          });
+
+          greet-crate-wasm-npm = craneLibWasm.mkCargoDerivation ((greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm-npm") // {
+            doInstallCargoArtifacts = false;
+
+            buildPhaseCargoCommand = ''
+              WASM_PACK_CACHE=.wasm-pack-cache wasm-pack build --out-dir $out/pkg --scope "${npm-scope}" --mode no-install --target bundler --release greet --profile release --frozen --offline
+            '';
+
+            nativeBuildInputs = [
+              pkgs.binaryen
+              pkgs.wasm-pack
+              wasm-bindgen-cli
+            ];
+          });
+
+          inputsFrom = [
+            config.treefmt.build.devShell
+            config.pre-commit.devShell
+          ];
+
+          devShellPackages = with pkgs; [
+            cargo-watch
+            nil
+          ];
         in
         {
           checks = {
-            inherit nrwn-crate;
-          };
+            nwrn-workspace-clippy = craneLib.cargoClippy (commonArgs // {
+              inherit cargoArtifacts;
+              cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+            });
 
-          packages.default = nrwn-crate;
+            nwrn-workspace-audit = craneLib.cargoAudit {
+              inherit (inputs) advisory-db;
+              inherit src;
+            };
+          } // (pkgs.lib.optionalAttrs (system == "x86_64-linux") {
+            inherit greet-crate-wasm-check;
+          });
+
+          packages = {
+            default = greet-crate-wasm-npm;
+            inherit greet-crate;
+            inherit greet-crate-wasm;
+            inherit greet-crate-wasm-npm;
+          };
 
           treefmt.config = {
             projectRootFile = "flake.nix";
@@ -89,16 +219,56 @@
           };
 
           devShells.default = craneLib.devShell {
-            inputsFrom = [
-              config.treefmt.build.devShell
-              config.pre-commit.devShell
-            ];
-            packages = with pkgs; [
-              cargo-watch
+            inherit inputsFrom;
+            packages = devShellPackages;
+          };
+
+          devShells.wasm = craneLibWasm.devShell {
+            inherit inputsFrom;
+            packages = devShellPackages ++ (with pkgs; [
+              binaryen
+
+              # Prefer `geckodriver` to `chromedriver` for interactive
+              # development.
+              geckodriver
               nodejs_20
               wasm-pack
-            ];
+            ] ++ [
+              wasm-bindgen-cli
+            ]);
           };
+        };
+
+      flake =
+        let
+          pkgs = import inputs.nixpkgs
+            {
+              system = "x86_64-linux";
+              overlays = [
+                inputs.hacknix.overlays.default
+                inputs.rust-overlay.overlays.default
+              ];
+            };
+        in
+        {
+          hydraJobs = {
+            inherit (inputs.self) checks;
+            inherit (inputs.self) packages;
+            inherit (inputs.self) devShells;
+
+            required = pkgs.releaseTools.aggregate {
+              name = "required-nix-ci";
+              constituents = builtins.map builtins.attrValues (with inputs.self.hydraJobs; [
+                packages.x86_64-linux
+                packages.aarch64-darwin
+                checks.x86_64-linux
+                checks.aarch64-darwin
+              ]);
+              meta.description = "Required Nix CI builds";
+            };
+          };
+
+          ciJobs = pkgs.lib.flakes.recurseIntoHydraJobs inputs.self.hydraJobs;
         };
     };
 }
