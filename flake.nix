@@ -125,6 +125,20 @@
             ];
           };
 
+          mkWasmNpmPackage = pkgName: crateArgs: craneLibWasm.mkCargoDerivation (crateArgs // {
+            doInstallCargoArtifacts = false;
+
+            buildPhaseCargoCommand = ''
+              WASM_PACK_CACHE=.wasm-pack-cache wasm-pack build --out-dir $out/pkg --scope "${npm-scope}" --mode no-install --target bundler --release ${pkgName} --profile release --frozen --offline
+            '';
+
+            nativeBuildInputs = [
+              pkgs.binaryen
+              pkgs.wasm-pack
+              wasm-bindgen-cli
+            ];
+          });
+
           greetCrateArgs = baseArgs: pname: baseArgs // {
             inherit pname;
             cargoExtraArgs = "${cargoExtraArgs} --package greet";
@@ -155,19 +169,7 @@
             ];
           });
 
-          greet-crate-wasm-npm = craneLibWasm.mkCargoDerivation ((greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm-npm") // {
-            doInstallCargoArtifacts = false;
-
-            buildPhaseCargoCommand = ''
-              WASM_PACK_CACHE=.wasm-pack-cache wasm-pack build --out-dir $out/pkg --scope "${npm-scope}" --mode no-install --target bundler --release greet --profile release --frozen --offline
-            '';
-
-            nativeBuildInputs = [
-              pkgs.binaryen
-              pkgs.wasm-pack
-              wasm-bindgen-cli
-            ];
-          });
+          greet-crate-wasm-npm = mkWasmNpmPackage "greet" (greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm-npm");
 
           inputsFrom = [
             config.treefmt.build.devShell
