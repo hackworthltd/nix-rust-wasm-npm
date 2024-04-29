@@ -116,31 +116,25 @@
             doCheck = false;
           };
 
-          fileSetForCrate = crate: lib.fileset.toSource {
-            root = ./.;
-            fileset = lib.fileset.unions [
-              ./Cargo.toml
-              ./Cargo.lock
-              crate
-            ];
-          };
-
-          greetCrateArgs = baseArgs: pname: baseArgs // {
-            inherit pname;
-            cargoExtraArgs = "${cargoExtraArgs} --package greet";
-            src = fileSetForCrate ./greet;
-            inherit (craneLib.crateNameFromCargoToml { cargoToml = ./greet/Cargo.toml; }) version;
-          };
-
-          greet-crate = craneLib.buildPackage (greetCrateArgs individualCrateArgs "${pname}-greet");
-
-          greet-crate-wasm = craneLibWasm.buildPackage (greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm");
-
-          greet-crate-wasm-check = craneLibWasm.mkCargoDerivation ((greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm-npm") // {
+          mkWasmNpmPackage = pkgName: crateArgs: craneLibWasm.mkCargoDerivation (crateArgs // {
             doInstallCargoArtifacts = false;
 
             buildPhaseCargoCommand = ''
-              WASM_PACK_CACHE=.wasm-pack-cache wasm-pack test --chrome --headless --mode no-install --release greet --profile release --frozen --offline
+              WASM_PACK_CACHE=.wasm-pack-cache wasm-pack build --out-dir $out/pkg --scope "${npm-scope}" --mode no-install --target bundler --release ${pkgName} --profile release --frozen --offline
+            '';
+
+            nativeBuildInputs = [
+              pkgs.binaryen
+              pkgs.wasm-pack
+              wasm-bindgen-cli
+            ];
+          });
+
+          mkWasmCheck = pkgName: crateArgs: craneLibWasm.mkCargoDerivation (crateArgs // {
+            doInstallCargoArtifacts = false;
+
+            buildPhaseCargoCommand = ''
+              WASM_PACK_CACHE=.wasm-pack-cache wasm-pack test --chrome --headless --mode no-install --release ${pkgName} --profile release --frozen --offline
             '';
 
             nativeBuildInputs = [
@@ -155,19 +149,33 @@
             ];
           });
 
-          greet-crate-wasm-npm = craneLibWasm.mkCargoDerivation ((greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm-npm") // {
-            doInstallCargoArtifacts = false;
+          greetCrateArgs = baseArgs: pname: baseArgs // {
+            inherit pname;
+            cargoExtraArgs = "${cargoExtraArgs} --package greet";
+            inherit (craneLib.crateNameFromCargoToml { cargoToml = ./greet/Cargo.toml; }) version;
+          };
 
-            buildPhaseCargoCommand = ''
-              WASM_PACK_CACHE=.wasm-pack-cache wasm-pack build --out-dir $out/pkg --scope "${npm-scope}" --mode no-install --target bundler --release greet --profile release --frozen --offline
-            '';
+          golCrateArgs = baseArgs: pname: baseArgs // {
+            inherit pname;
+            cargoExtraArgs = "${cargoExtraArgs} --package gol";
+            inherit (craneLib.crateNameFromCargoToml { cargoToml = ./gol/Cargo.toml; }) version;
+          };
 
-            nativeBuildInputs = [
-              pkgs.binaryen
-              pkgs.wasm-pack
-              wasm-bindgen-cli
-            ];
-          });
+          greet-crate = craneLib.buildPackage (greetCrateArgs individualCrateArgs "${pname}-greet");
+
+          greet-crate-wasm = craneLibWasm.buildPackage (greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm");
+
+          greet-crate-wasm-check = mkWasmCheck "greet" (greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm-check");
+
+          greet-crate-wasm-npm = mkWasmNpmPackage "greet" (greetCrateArgs individualCrateArgsWasm "${pname}-greet-wasm-npm");
+
+          gol-crate = craneLib.buildPackage (golCrateArgs individualCrateArgs "${pname}-gol");
+
+          gol-crate-wasm = craneLibWasm.buildPackage (golCrateArgs individualCrateArgsWasm "${pname}-gol-wasm");
+
+          gol-crate-wasm-check = mkWasmCheck "gol" (golCrateArgs individualCrateArgsWasm "${pname}-gol-wasm-check");
+
+          gol-crate-wasm-npm = mkWasmNpmPackage "gol" (golCrateArgs individualCrateArgsWasm "${pname}-gol-wasm-npm");
 
           inputsFrom = [
             config.treefmt.build.devShell
@@ -192,13 +200,14 @@
             };
           } // (pkgs.lib.optionalAttrs (system == "x86_64-linux") {
             inherit greet-crate-wasm-check;
+            inherit gol-crate-wasm-check;
           });
 
           packages = {
-            default = greet-crate-wasm-npm;
-            inherit greet-crate;
-            inherit greet-crate-wasm;
-            inherit greet-crate-wasm-npm;
+            default = gol-crate-wasm-npm;
+            inherit greet-crate gol-crate;
+            inherit greet-crate-wasm gol-crate-wasm;
+            inherit greet-crate-wasm-npm gol-crate-wasm-npm;
           };
 
           treefmt.config = {
