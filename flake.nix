@@ -33,7 +33,7 @@
 
   outputs = inputs:
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
-      systems = import inputs.systems;
+      systems = [ "x86_64-linux" "aarch64-darwin" ];
       imports = [
         inputs.treefmt-nix.flakeModule
         inputs.pre-commit-hooks-nix.flakeModule
@@ -42,7 +42,10 @@
         let
           pkgs = import inputs.nixpkgs {
             inherit system;
-            overlays = [ inputs.rust-overlay.overlays.default ];
+            overlays = [
+              inputs.hacknix.overlays.default
+              inputs.rust-overlay.overlays.default
+            ];
           };
 
           rustToolchain =
@@ -178,8 +181,6 @@
         in
         {
           checks = {
-            inherit greet-crate-wasm-check;
-
             nwrn-workspace-clippy = craneLib.cargoClippy (commonArgs // {
               inherit cargoArtifacts;
               cargoClippyExtraArgs = "--all-targets -- --deny warnings";
@@ -189,7 +190,9 @@
               inherit (inputs) advisory-db;
               inherit src;
             };
-          };
+          } // (pkgs.lib.optionalAttrs (system == "x86_64-linux") {
+            inherit greet-crate-wasm-check;
+          });
 
           packages = {
             default = greet-crate-wasm-npm;
@@ -234,6 +237,38 @@
               wasm-bindgen-cli
             ]);
           };
+        };
+
+      flake =
+        let
+          pkgs = import inputs.nixpkgs
+            {
+              system = "x86_64-linux";
+              overlays = [
+                inputs.hacknix.overlays.default
+                inputs.rust-overlay.overlays.default
+              ];
+            };
+        in
+        {
+          hydraJobs = {
+            inherit (inputs.self) checks;
+            inherit (inputs.self) packages;
+            inherit (inputs.self) devShells;
+
+            required = pkgs.releaseTools.aggregate {
+              name = "required-nix-ci";
+              constituents = builtins.map builtins.attrValues (with inputs.self.hydraJobs; [
+                packages.x86_64-linux
+                packages.aarch64-darwin
+                checks.x86_64-linux
+                checks.aarch64-darwin
+              ]);
+              meta.description = "Required Nix CI builds";
+            };
+          };
+
+          ciJobs = pkgs.lib.flakes.recurseIntoHydraJobs inputs.self.hydraJobs;
         };
     };
 }

@@ -1,0 +1,30 @@
+agents:
+  queue: "nix-eval"
+
+steps:
+  - command: nix flake archive .#
+    label: ":nix: Archive Nix flake inputs"
+    agents:
+      queue: "nix-build"
+
+  - command: nix-buildkite
+    label: ":nix: :buildkite:"
+    plugins:
+      - hackworthltd/nix#v1.0.0:
+          file: nix/ci.nix
+          agent-tags: queue=nix-build,os=linux
+
+  - wait
+
+  - label: ":nix: :linux: Cache the Nix shell"
+    command: |
+      nix develop --print-build-logs --profile /tmp/nix-rust-wasm-npm --command echo "done"
+    agents:
+      queue: "nix-build"
+
+  - label: ":nix: :macos: Cache the Nix shell"
+    command: |
+      nix develop --print-build-logs --profile /tmp/nix-rust-wasm-npm --command echo "done"
+    agents:
+      queue: "nix-build"
+      os: "darwin"
