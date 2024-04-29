@@ -25,6 +25,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gol"
+version = "0.1.0"
+dependencies = [
+ "cfg-if",
+ "console_error_panic_hook",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
+ "web-sys",
+]
+
+[[package]]
 name = "greet"
 version = "0.1.0"
 dependencies = [
