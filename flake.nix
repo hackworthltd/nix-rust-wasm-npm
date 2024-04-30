@@ -184,6 +184,8 @@
 
           devShellPackages = with pkgs; [
             cargo-watch
+            critcmp
+            gnuplot
             nil
           ];
         in

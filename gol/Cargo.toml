@@ -33,4 +33,9 @@ features = [
 ]
 
 [dev-dependencies]
+criterion = "0.5.1"
 wasm-bindgen-test = "0.3.42"
+
+[[bench]]
+name = "gol"
+harness = false
