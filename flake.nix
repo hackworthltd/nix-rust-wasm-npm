@@ -251,6 +251,7 @@
             settings = {
               hooks = {
                 treefmt.enable = true;
+                actionlint.enable = true;
               };
             };
           };
