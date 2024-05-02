@@ -116,6 +116,28 @@
             doCheck = false;
           };
 
+          # For the moment, it's not possible to run
+          # `wasm32-unknown-unknown` benchmarks, so we run them
+          # native.
+          mkBench = pkgName: crateArgs: (craneLib.mkCargoDerivation (crateArgs // {
+            doInstallCargoArtifacts = false;
+
+            # Use `bencher` format so we can use `cargo
+            # bench`-compatible tooling.
+            buildPhaseCargoCommand = ''
+              mkdir -p $out
+              cargo bench --bench=${pkgName} --frozen --offline -- --output-format=bencher | tee $out/bench.txt
+            '';
+
+            nativeBuildInputs = [
+              pkgs.coreutils
+              pkgs.gnuplot
+            ];
+          })).overrideAttrs
+            (oldAttrs: {
+              requiredSystemFeatures = (oldAttrs.requiredSystemFeatures or [ ]) ++ [ "benchmark" ];
+            });
+
           mkWasmNpmPackage = pkgName: crateArgs: craneLibWasm.mkCargoDerivation (crateArgs // {
             doInstallCargoArtifacts = false;
 
@@ -177,6 +199,8 @@
 
           gol-crate-wasm-npm = mkWasmNpmPackage "gol" (golCrateArgs individualCrateArgsWasm "${pname}-gol-wasm-npm");
 
+          gol-crate-bench = mkBench "gol" (golCrateArgs individualCrateArgs "${pname}-gol");
+
           inputsFrom = [
             config.treefmt.build.devShell
             config.pre-commit.devShell
@@ -210,7 +234,9 @@
             inherit greet-crate gol-crate;
             inherit greet-crate-wasm gol-crate-wasm;
             inherit greet-crate-wasm-npm gol-crate-wasm-npm;
-          };
+          } // (pkgs.lib.optionalAttrs (system == "x86_64-linux") {
+            inherit gol-crate-bench;
+          });
 
           treefmt.config = {
             projectRootFile = "flake.nix";
