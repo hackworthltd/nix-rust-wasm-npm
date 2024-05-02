@@ -33,8 +33,12 @@ features = [
 ]
 
 [dev-dependencies]
-criterion = "0.5.1"
 wasm-bindgen-test = "0.3.42"
+
+[dev-dependencies.criterion]
+version = "0.5.1"
+# Needed for wasm32 targets
+default-features = false
 
 [[bench]]
 name = "gol"
